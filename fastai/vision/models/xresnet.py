@@ -2,13 +2,14 @@ import torch.nn as nn
 import torch,math,sys
 import torch.utils.model_zoo as model_zoo
 from functools import partial
+from ...torch_core import Module
 
 __all__ = ['XResNet', 'xresnet18', 'xresnet34', 'xresnet50', 'xresnet101', 'xresnet152']
 
 # or: ELU+init (a=0.54; gain=1.55)
 act_fn = nn.ReLU(inplace=True)
 
-class Flatten(nn.Module):
+class Flatten(Module):
     def forward(self, x): return x.view(x.size(0), -1)
 
 def init_cnn(m):
@@ -28,21 +29,20 @@ def conv_layer(ni, nf, ks=3, stride=1, zero_bn=False, act=True):
     if act: layers.append(act_fn)
     return nn.Sequential(*layers)
 
-class ResBlock(nn.Module):
+class ResBlock(Module):
     def __init__(self, expansion, ni, nh, stride=1):
-        super().__init__()
         nf,ni = nh*expansion,ni*expansion
-        layers  = [conv_layer(ni, nh, 1)]
-        layers += [
-            conv_layer(nh, nf, 3, stride=stride, zero_bn=True, act=False)
-        ] if expansion==1 else [
-            conv_layer(nh, nh, 3, stride=stride),
-            conv_layer(nh, nf, 1, zero_bn=True, act=False)
+        layers  = [conv_layer(ni, nh, 3, stride=stride),
+                   conv_layer(nh, nf, 3, zero_bn=True, act=False)
+        ] if expansion == 1 else [
+                   conv_layer(ni, nh, 1),
+                   conv_layer(nh, nh, 3, stride=stride),
+                   conv_layer(nh, nf, 1, zero_bn=True, act=False)
         ]
         self.convs = nn.Sequential(*layers)
         # TODO: check whether act=True works better
         self.idconv = noop if ni==nf else conv_layer(ni, nf, 1, act=False)
-        self.pool = noop if stride==1 else nn.AvgPool2d(2)
+        self.pool = noop if stride==1 else nn.AvgPool2d(2, ceil_mode=True)
 
     def forward(self, x): return act_fn(self.convs(x) + self.idconv(self.pool(x)))
 

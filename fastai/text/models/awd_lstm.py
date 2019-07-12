@@ -14,7 +14,7 @@ def dropout_mask(x:Tensor, sz:Collection[int], p:float):
     "Return a dropout mask of the same type as `x`, size `sz`, with probability `p` to cancel an element."
     return x.new(*sz).bernoulli_(1-p).div_(1-p)
 
-class RNNDropout(nn.Module):
+class RNNDropout(Module):
     "Dropout with probability `p` that is consistent on the seq_len dimension."
 
     def __init__(self, p:float=0.5):
@@ -26,7 +26,7 @@ class RNNDropout(nn.Module):
         m = dropout_mask(x.data, (x.size(0), 1, x.size(2)), self.p)
         return x * m
 
-class WeightDropout(nn.Module):
+class WeightDropout(Module):
     "A module that warps another layer in which some weights will be replaced by 0 during training."
 
     def __init__(self, module:nn.Module, weight_p:float, layer_names:Collection[str]=['weight_hh_l0']):
@@ -57,7 +57,7 @@ class WeightDropout(nn.Module):
             self.module._parameters[layer] = F.dropout(raw_w, p=self.weight_p, training=False)
         if hasattr(self.module, 'reset'): self.module.reset()
 
-class EmbeddingDropout(nn.Module):
+class EmbeddingDropout(Module):
     "Apply dropout with probabily `embed_p` to an embedding layer `emb`."
 
     def __init__(self, emb:nn.Module, embed_p:float):
@@ -76,7 +76,7 @@ class EmbeddingDropout(nn.Module):
         return F.embedding(words, masked_embed, self.pad_idx, self.emb.max_norm,
                            self.emb.norm_type, self.emb.scale_grad_by_freq, self.emb.sparse)
 
-class AWD_LSTM(nn.Module):
+class AWD_LSTM(Module):
     "AWD-LSTM/QRNN inspired by https://arxiv.org/abs/1708.02182."
 
     initrange=0.1
@@ -91,8 +91,8 @@ class AWD_LSTM(nn.Module):
         if self.qrnn:
             #Using QRNN requires an installation of cuda
             from .qrnn import QRNN
-            self.rnns = [QRNN(emb_sz if l == 0 else n_hid, n_hid if l != n_layers - 1 else emb_sz, 1,
-                              save_prev_x=True, zoneout=0, window=2 if l == 0 else 1, output_gate=True) 
+            self.rnns = [QRNN(emb_sz if l == 0 else n_hid, (n_hid if l != n_layers - 1 else emb_sz)//self.n_dir, 1,
+                              save_prev_x=True, zoneout=0, window=2 if l == 0 else 1, output_gate=True, bidirectional=bidir) 
                          for l in range(n_layers)]
             for rnn in self.rnns: 
                 rnn.layers[0].linear = WeightDropout(rnn.layers[0].linear, weight_p, layer_names=['weight'])
@@ -125,7 +125,7 @@ class AWD_LSTM(nn.Module):
     def _one_hidden(self, l:int)->Tensor:
         "Return one hidden state."
         nh = (self.n_hid if l != self.n_layers - 1 else self.emb_sz) // self.n_dir
-        return one_param(self).new(1, self.bs, nh).zero_()
+        return one_param(self).new(self.n_dir, self.bs, nh).zero_()
 
     def select_hidden(self, idxs):
         if self.qrnn: self.hidden = [h[:,idxs,:] for h in self.hidden]
@@ -138,7 +138,7 @@ class AWD_LSTM(nn.Module):
         if self.qrnn: self.hidden = [self._one_hidden(l) for l in range(self.n_layers)]
         else: self.hidden = [(self._one_hidden(l), self._one_hidden(l)) for l in range(self.n_layers)]
 
-class LinearDecoder(nn.Module):
+class LinearDecoder(Module):
     "To go on top of a RNNCore module and create a Language Model."
     initrange=0.1
 
@@ -173,10 +173,10 @@ def awd_lstm_clas_split(model:nn.Module) -> List[nn.Module]:
     groups += [[rnn, dp] for rnn, dp in zip(model[0].module.rnns, model[0].module.hidden_dps)]
     return groups + [[model[1]]]
 
-awd_lstm_lm_config = dict(emb_sz=400, n_hid=1150, n_layers=3, pad_token=1, qrnn=False, bidir=False, output_p=0.1,
+awd_lstm_lm_config = dict(emb_sz=400, n_hid=1152, n_layers=3, pad_token=1, qrnn=False, bidir=False, output_p=0.1,
                           hidden_p=0.15, input_p=0.25, embed_p=0.02, weight_p=0.2, tie_weights=True, out_bias=True)
 
-awd_lstm_clas_config = dict(emb_sz=400, n_hid=1150, n_layers=3, pad_token=1, qrnn=False, bidir=False, output_p=0.4,
+awd_lstm_clas_config = dict(emb_sz=400, n_hid=1152, n_layers=3, pad_token=1, qrnn=False, bidir=False, output_p=0.4,
                        hidden_p=0.3, input_p=0.4, embed_p=0.05, weight_p=0.5)
 
 def value2rgba(x:float, cmap:Callable=cm.RdYlGn, alpha_mult:float=1.0)->Tuple:
@@ -204,15 +204,14 @@ def _eval_dropouts(mod):
         module_name =  mod.__class__.__name__
         if 'Dropout' in module_name or 'BatchNorm' in module_name: mod.training = False
         for module in mod.children(): _eval_dropouts(module)
-
-
+            
 class TextClassificationInterpretation(ClassificationInterpretation):
     """Provides an interpretation of classification based on input sensitivity.
     This was designed for AWD-LSTM only for the moment, because Transformer already has its own attentional model.
     """
 
-    def __init__(self, learn: Learner, probs: Tensor, y_true: Tensor, losses: Tensor, ds_type: DatasetType = DatasetType.Valid):
-        super(TextClassificationInterpretation, self).__init__(learn,probs,y_true,losses,ds_type)
+    def __init__(self, learn: Learner, preds: Tensor, y_true: Tensor, losses: Tensor, ds_type: DatasetType = DatasetType.Valid):
+        super(TextClassificationInterpretation, self).__init__(learn,preds,y_true,losses,ds_type)
         self.model = learn.model
 
     def intrinsic_attention(self, text:str, class_id:int=None):
@@ -259,11 +258,10 @@ class TextClassificationInterpretation(ClassificationInterpretation):
             classes = self.data.classes
             txt = ' '.join(tx.text.split(' ')[:max_len]) if max_len is not None else tx.text
             tmp = [txt, f'{classes[self.pred_class[idx]]}', f'{classes[cl]}', f'{self.losses[idx]:.2f}',
-                   f'{self.probs[idx][cl]:.2f}']
+                   f'{self.preds[idx][cl]:.2f}']
             items.append(tmp)
         items = np.array(items)
         names = ['Text', 'Prediction', 'Actual', 'Loss', 'Probability']
         df = pd.DataFrame({n:items[:,i] for i,n in enumerate(names)}, columns=names)
         with pd.option_context('display.max_colwidth', -1):
             display(HTML(df.to_html(index=False)))
-

@@ -1,5 +1,7 @@
 import pytest, torch, fastai
 from fastai.gen_doc.doctest import this_tests
+from fastai import *
+from fastai.vision import *
 from fastai.torch_core import *
 from fastai.layers import *
 from math import isclose
@@ -94,23 +96,103 @@ def test_np2model_tensor():
     a = np.ones([2,2])
     t = np2model_tensor(a)
     assert isinstance(t,torch.FloatTensor)
+    
+def test_np_address(): 
+    this_tests(np_address)
+    a=np.ndarray(shape=(2,2))
+    add=np_address(a)
+    assert isinstance(add, int)
+
+def test_to_data():
+    this_tests(to_data)    
+    path = untar_data(URLs.MNIST_SAMPLE)
+    data1 = ImageDataBunch.from_folder(path)
+    ys1 = list(data1.y)
+    a=([1,2,3],[3,6,6])
+    b=([4,5,6],[4,7,7])
+    data2 = torch.tensor([a,b])
+    ys2= list(data2[0])
+    assert isinstance(data1, fastai.vision.data.ImageDataBunch)
+    assert isinstance(data1.y, ItemList)
+    assert isinstance(ys1, list)
+    assert isinstance(ys1[0], Category)
+    assert isinstance(ys1[0].data, np.int64)
+    assert isinstance(to_data(ys1[0]), np.int64)
+    assert ys1[0].data == to_data(ys1[0]) 
+    assert isinstance(data2, torch.Tensor)
+    assert isinstance(data2[0], torch.Tensor)
+    assert isinstance(ys2, list)
+    assert isinstance(ys2[0], torch.Tensor)
+    assert isinstance(ys2[0].data, torch.Tensor)
+    assert isinstance(to_data(ys2[0]), torch.Tensor) 
+    assert torch.all(torch.eq(ys2[0].data, to_data(ys2[0]))) 
+    
+@pytest.mark.cuda
+def test_to_detach():
+    this_tests(to_detach)
+    a=([1.,2.,3.],[3.,6.,6.])
+    b=np.array([[4,5,6],[4,7,7]])
+    ta=torch.tensor(a, requires_grad=True).cuda()
+    dta=to_detach(a)
+    dtta=to_detach(ta, False)
+    dttacpu=to_detach(ta, True)
+    db=to_detach(b)
+    assert ta.is_cuda
+    assert isinstance(ta, (torch.cuda.FloatTensor or torch.cuda.DoubleTensor or torch.cuda.HalfTensor))
+    assert ta.requires_grad 
+    assert dtta.is_cuda
+    assert isinstance(dtta, (torch.cuda.FloatTensor or torch.cuda.DoubleTensor or torch.cuda.HalfTensor))
+    assert not dtta.requires_grad
+    assert not dttacpu.is_cuda
+    assert isinstance(dttacpu, (torch.FloatTensor or torch.DoubleTensor or torch.HalfTensor))
+    assert not dttacpu.requires_grad
+    assert isinstance(b,np.ndarray)
+    assert isinstance(db,np.ndarray)
+    assert np.all([b,db]) 
+    
+@pytest.mark.cuda    
+def test_to_cpu():
+    this_tests(to_cpu)
+    a=([1,2,3],[3,6,6])
+    b=([4,5,6],[4,7,7])
+    ta=torch.tensor(a).cuda()
+    tb=torch.tensor(b)
+    tacpu=to_cpu(ta)
+    tbcpu=to_cpu(tb)
+    assert ta.is_cuda
+    assert isinstance(ta, (torch.cuda.LongTensor or torch.cuda.IntTensor or torch.cuda.ShortTensor))
+    assert not tacpu.is_cuda
+    assert isinstance(tacpu, (torch.LongTensor or torch.IntTensor or torch.ShortTensor))
+    assert not tb.is_cuda
+    assert isinstance(tb, (torch.LongTensor or torch.IntTensor or torch.ShortTensor))
+    assert not tbcpu.is_cuda
+    assert isinstance(tbcpu, (torch.LongTensor or torch.IntTensor or torch.ShortTensor))
 
 def test_to_half():
     this_tests(to_half)
-    a=[1.,2.,3.]
-    b=[3.,6.,6.]
-    c=[1,2,3]
-    d=[3,6,6]
+    a=([1.,2.,3.],[3.,6.,6.])
+    b=([1,2,3],[3,6,6])
     ta=torch.tensor(a)
     tb=torch.tensor(b)
-    tc=torch.tensor(c)
-    td=torch.tensor(d) 
-    hfl=to_half([ta,tb])
-    hint=to_half([tc,td])
-    assert hfl[0].dtype == torch.float16
-    assert hfl[1].dtype == torch.float16
-    assert hint[0].dtype == torch.int64 or torch.int32 or torch.int16
-    assert hint[1].dtype == torch.int64 or torch.int32 or torch.int16    
+    tfl=to_half(ta)
+    tint=to_half(tb)
+    assert tfl[0].dtype == torch.half
+    assert tfl[1].dtype == torch.half
+    assert tint[0].dtype == torch.int64 or torch.int32 or torch.int16
+    assert tint[1].dtype == torch.int64 or torch.int32 or torch.int16
+    
+def test_to_float():
+    this_tests(to_float)
+    a=([1.,2.,3.],[3.,6.,6.])
+    b=([1,2,3],[3,6,6])
+    ta=torch.tensor(a)
+    tb=torch.tensor(b)
+    tfl=to_float(ta)
+    tint=to_float(tb)
+    assert tfl[0].dtype == torch.float32
+    assert tfl[1].dtype == torch.float32
+    assert tint[0].dtype == torch.int64 or torch.int32 or torch.int16
+    assert tint[1].dtype == torch.int64 or torch.int32 or torch.int16
     
 def test_children():
     this_tests(children)
@@ -142,12 +224,6 @@ def test_last_layer():
     assert isinstance(ll, nn.Module)
     assert isinstance(ll, torch.nn.modules.activation.ReLU)
     
-def test_np_address(): 
-    this_tests(np_address)
-    a=np.ndarray(shape=(2,2))
-    add=np_address(a)
-    assert isinstance(add, int)
-
 def test_model_type(): 
     this_tests(model_type) 
     a=np.array([1.,2.,3.]).dtype 
