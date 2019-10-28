@@ -133,6 +133,10 @@ def requires_grad(m:nn.Module, b:Optional[bool]=None)->Optional[bool]:
     if b is None: return ps[0].requires_grad
     for p in ps: p.requires_grad=b
 
+def has_params(m:nn.Module)->bool:
+    "Check if `m` has at least one parameter"
+    return len(list(m.parameters())) > 0
+        
 def trainable_params(m:nn.Module)->ParamList:
     "Return list of trainable params in `m`."
     res = filter(lambda p: p.requires_grad, m.parameters())
@@ -409,7 +413,11 @@ def add_metrics(last_metrics:Collection[Rank0Tensor], mets:Union[Rank0Tensor, Co
 
 def try_save(state:Dict, path:Path=None, file:PathLikeOrBinaryStream=None):
     target = open(path/file, 'wb') if is_pathlike(file) else file
-    try: torch.save(state, target)
+    try: 
+        with warnings.catch_warnings():
+            #To avoid the warning that come from PyTorch about model not being checked
+            warnings.simplefilter("ignore")
+            torch.save(state, target)
     except OSError as e:
         raise Exception(f"{e}\n Can't write {path/file}. Pass an absolute writable pathlib obj `fname`.")
 
