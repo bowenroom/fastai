@@ -318,14 +318,6 @@ def to_np(x):
     "Convert a tensor to a numpy array."
     return x.data.cpu().numpy()
 
-# monkey patching to allow matplotlib to plot tensors
-def tensor__array__(self, dtype=None):
-    res = to_np(self)
-    if dtype is None: return res
-    else: return res.astype(dtype, copy=False)
-Tensor.__array__ = tensor__array__
-Tensor.ndim = property(lambda x: len(x.shape))
-
 def grab_idx(x,i,batch_first:bool=True):
     "Grab the `i`-th batch in `x`, `batch_first` stating the batch dimension."
     if batch_first: return ([o[i].cpu() for o in x]   if is_listy(x) else x[i].cpu())
@@ -406,6 +398,10 @@ def rank_distrib():
     "Return the distributed rank of this process (if applicable)."
     return int(os.environ.get('RANK', 0))
 
+def distrib_barrier():
+    "Barrier synchronization in distributed training (if applicable).  Processes in the same process group must all arrive here before proceeding further. Example use case: avoid processes stepping on each other when saving and loading models in distributed training.  See https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#save-and-load-checkpoints."
+    if num_distrib() > 1: torch.distributed.barrier()
+    
 def add_metrics(last_metrics:Collection[Rank0Tensor], mets:Union[Rank0Tensor, Collection[Rank0Tensor]]):
     "Return a dictionary for updating `last_metrics` with `mets`."
     last_metrics,mets = listify(last_metrics),listify(mets)
