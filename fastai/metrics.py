@@ -295,8 +295,9 @@ def roc_curve(input:Tensor, targ:Tensor):
     tps = torch.cumsum(targ * 1, dim=-1)[threshold_idxs]
     fps = (1 + threshold_idxs - tps)
     if tps[0] != 0 or fps[0] != 0:
-        fps = torch.cat((LongTensor([0]), fps))
-        tps = torch.cat((LongTensor([0]), tps))
+        zer = fps.new_zeros(1)
+        fps = torch.cat((zer, fps))
+        tps = torch.cat((zer, tps))
     fpr, tpr = fps.float() / fps[-1], tps.float() / tps[-1]
     return fpr, tpr
 
@@ -319,7 +320,7 @@ class MultiLabelFbeta(Callback):
     # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.f1_score.html
     _order = -20 
     def __init__(self, beta=2, eps=1e-15, thresh=0.3, sigmoid=True, average="micro"):
-        self.eps,self.thresh,self.sigmoid,self.average,self.beta2 = eps,thresh,sigmoid,average,beta**2
+        self.eps,self.thresh,self.sigmoid,self.average,self.beta = eps,thresh,sigmoid,average,beta
 
     def on_epoch_begin(self, **kwargs):
         self.tp,self.total_pred,self.total_targ = 0,0,0
@@ -332,7 +333,8 @@ class MultiLabelFbeta(Callback):
         self.total_targ += targ.sum(0).float()
     
     def fbeta_score(self, precision, recall):
-        return (1 + self.beta2)*(precision*recall)/((self.beta2*precision + recall) + self.eps)
+        beta2 = self.beta**2
+        return (1 + beta2)*(precision*recall)/((beta2*precision + recall) + self.eps)
 
     def on_epoch_end(self, last_metrics, **kwargs):
         self.total_pred += self.eps
